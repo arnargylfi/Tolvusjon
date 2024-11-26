@@ -2,7 +2,7 @@ import cv2
 import time
 import numpy as np
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 fps = 0 
 while(True):
     tic = time.time()
@@ -13,7 +13,7 @@ while(True):
     
     # Mark the brightest spot on the original frame
 
-    cv2.circle(frame, brightest_loc,10, (255, 0, 0), thickness=1)
+    cv2.circle(frame, brightest_loc,5, (255, 0, 0), thickness=1)
     #Brightest spot text
     cv2.putText(frame, f"Brightest", (brightest_loc[0]-40,brightest_loc[1]+20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
@@ -25,7 +25,7 @@ while(True):
 
     _, _, _, reddest_loc = cv2.minMaxLoc(color_ratio)
 
-    cv2.circle(frame, reddest_loc,10, (0, 0, 255), 1)
+    cv2.circle(frame, reddest_loc,5, (0, 0, 255), 1)
     cv2.putText(frame, "Reddest", (reddest_loc[0] - 40, reddest_loc[1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
 
