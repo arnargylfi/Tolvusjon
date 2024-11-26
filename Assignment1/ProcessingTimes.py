@@ -72,7 +72,6 @@ def f4(runningtime):
         for y in range(gray.shape[0]):  # Loop over rows (height)
             for x in range(gray.shape[1]):  # Loop over columns (width)
                 pixel_intensity = gray[y, x]
-                
                 if pixel_intensity > max_intensity:
                     max_intensity = pixel_intensity
                     brightest_loc = (x, y)
@@ -85,6 +84,8 @@ def f4(runningtime):
         timenow = time.time()
         loops+=1
     print(f"Displayed {loops} video frames with marking for brightest spot found with double for loop in {timenow-begintime:.2f} seconds or {(timenow-begintime)/loops:.3f} seconds processing time per loop iteration")
+
+
 T = 10
 f1(T)
 f2(T)
