@@ -41,13 +41,22 @@ def f(delta,N=None,p=None, e = None, s = None):
         for i in range(iterations-1):
             pkt1 = random_points[i,:]
             pkt2 = random_points[i+1,:]
-            hallatala = (pkt2[1]-pkt1[1])/(pkt2[0]-pkt1[0])
-            y_intercept = pkt1[1]-hallatala*pkt1[0]
+
+            a = pkt2[1] - pkt1[1]
+            b = pkt1[0] - pkt2[0]
+            c = pkt2[0] * pkt1[1] - pkt1[0] * pkt2[1]
+
+            # Normalize the line parameters
+            normalize = np.sqrt(a**2 + b**2)
+            a = a/normalize
+            b = b/normalize 
+            c = c/normalize
+
+            # Compute distances of all points to the line
+            distances = np.abs(a * edge_array[:, 0] + b * edge_array[:, 1] + c)
+            
             #compute distance to line for each point
             #plug í ofanvarp formula
-            x = edge_array[:,0]
-            y = edge_array[:,1]
-            distances = ofanvarp(x,y,hallatala,y_intercept)
             count_within_delta = np.sum(distances<delta)
             if count_within_delta > best_count:
                 best_count = count_within_delta
@@ -59,6 +68,6 @@ def f(delta,N=None,p=None, e = None, s = None):
         cv2.imshow('edges',edges)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-f(5,50)
+f(2,50)
 cap.release()
 cv2.destroyAllWindows()
