@@ -4,13 +4,6 @@ cap = cv2.VideoCapture(0)
 import time
 
 
-#Ofanvarp formula til að reikna frá punkti til línu
-def ofanvarp(x1,y1,slope,y_intercept):
-    teljari = abs(-slope*x1+y1+y_intercept)
-    nefnari = np.sqrt(1+slope**2)
-    return teljari/nefnari
-
-
 def f(delta,N=None,p=None, e = None, s = None):
     fps = 0
     #Reikna N fyrir RANSAC ef það er ekki gefið
