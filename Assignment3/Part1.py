@@ -124,11 +124,3 @@ if __name__ == '__main__':
         cv2.imshow('Output', img)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-
-
-
-# while True:
-#     _, frame = cap.read()
-#     cv2.imshow('Frame',frame)
-#     if cv2.waitKey(1) & 0xFF == ord('q'):
-#         break
