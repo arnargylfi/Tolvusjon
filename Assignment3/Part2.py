@@ -1,76 +1,127 @@
-import os
-import glob
-import matplotlib.pyplot as plt
 import cv2
-import requests
-import zipfile
-
-# Constants
-TRAIN = True
-EPOCHS = 25
-base_dir = "C:/Users/arnar/YOLOv5"
-data_yaml = f"{base_dir}/data.yaml"
-dirs = ['train', 'valid', 'test']
+import numpy as np
+import onnx
+from onnxsim import simplify
 
 
-# Set the result directory name
-def set_res_dir():
-    return f"experiment_{EPOCHS}_epochs"
 
-RES_DIR = set_res_dir()
+# Constants.
+INPUT_WIDTH = 640
+INPUT_HEIGHT = 640
+SCORE_THRESHOLD = 0.5
+NMS_THRESHOLD = 0.45
+CONFIDENCE_THRESHOLD = 0.45
+ 
+# Text parameters.
+FONT_FACE = cv2.FONT_HERSHEY_SIMPLEX
+FONT_SCALE = 0.7
+THICKNESS = 1
+ 
+# Colors.
+BLACK  = (0,0,0)
+BLUE   = (255,178,50)
+YELLOW = (0,255,255)
 
-# Change to YOLOv5 directory
-os.chdir(base_dir)
+cap = cv2.VideoCapture(0)
 
-# Train the YOLOv5 model
-train_command = f'python train.py --data "{data_yaml}" --weights yolov5s.pt --img 640 --epochs {EPOCHS} --batch-size 16 --name "{RES_DIR}"'
-print(f"Running training command: {train_command}")
-os.system(train_command)
 
-# Function to show validation predictions saved during training.
-def show_valid_results(RES_DIR):
-    exp_path = f"runs/train/{RES_DIR}"
-    validation_pred_images = glob.glob(f"{exp_path}/*_pred.jpg")
-    if validation_pred_images:
-        print(validation_pred_images)
-        for pred_image in validation_pred_images:
-            image = cv2.imread(pred_image)
-            plt.figure(figsize=(19, 16))
-            plt.imshow(image[:, :, ::-1])
-            plt.axis('off')
-            plt.show()
-    else:
-        print(f"No validation prediction images found in {exp_path}")
+def draw_label(im, label, x, y):
+    """Draw text onto image at location."""
+    # Get text size.
+    text_size = cv2.getTextSize(label, FONT_FACE, FONT_SCALE, THICKNESS)
+    dim, baseline = text_size[0], text_size[1]
+    # Use text size to create a BLACK rectangle.
+    cv2.rectangle(im, (x,y), (x + dim[0], y + dim[1] + baseline), (0,0,0), cv2.FILLED);
+    # Display text inside the rectangle.
+    cv2.putText(im, label, (x, y + dim[1]), FONT_FACE, FONT_SCALE, YELLOW, THICKNESS, cv2.LINE_AA)
 
-# Helper function for inference on images.
-def inference(RES_DIR, data_path):
-    # Directory to store inference results.
-    infer_dir_count = len(glob.glob('runs/detect/*'))
-    print(f"Current number of inference detection directories: {infer_dir_count}")
-    INFER_DIR = f"inference_{infer_dir_count+1}"
-    print(f"Inference directory: {INFER_DIR}")
 
-    # Run inference with YOLOv5 model on the test images.
-    inference_command = f'python detect.py --weights "runs/train/{RES_DIR}/weights/best.pt" --source "{data_path}" --name "{INFER_DIR}"'
-    print(f"Running inference command: {inference_command}")
-    os.system(inference_command)
-    return INFER_DIR
+def pre_process(input_image, net):
+      # Create a 4D blob from a frame.
+      blob = cv2.dnn.blobFromImage(input_image, 1/255,  (INPUT_WIDTH, INPUT_HEIGHT), [0,0,0], 1, crop=False)
+ 
+      # Sets the input to the network.
+      net.setInput(blob)
+ 
+      # Run the forward pass to get output of the output layers.
+      outputs = net.forward(net.getUnconnectedOutLayersNames())
+      return outputs
 
-# Visualize inference results.
-def visualize(INFER_DIR):
-    INFER_PATH = f"runs/detect/{INFER_DIR}"
-    infer_images = glob.glob(f"{INFER_PATH}/*.jpg")
-    if infer_images:
-        print(infer_images)
-        for pred_image in infer_images:
-            image = cv2.imread(pred_image)
-            plt.figure(figsize=(19, 16))
-            plt.imshow(image[:, :, ::-1])
-            plt.axis('off')
-            plt.show()
-    else:
-        print(f"No inference images found in {INFER_PATH}")
+def post_process(input_image, outputs):
+      # Lists to hold respective values while unwrapping.
+      class_ids = []
+      confidences = []
+      boxes = []
+      # Rows.
+      rows = outputs[0].shape[1]
+      image_height, image_width = input_image.shape[:2]
+      # Resizing factor.
+      x_factor = image_width / INPUT_WIDTH
+      y_factor =  image_height / INPUT_HEIGHT
+      # Iterate through detections.
+      for r in range(rows):
+            row = outputs[0][0][r]
+            confidence = row[4]
+            # Discard bad detections and continue.
+            if confidence >= CONFIDENCE_THRESHOLD:
+                  classes_scores = row[5:]
+                  # Get the index of max class score.
+                  class_id = np.argmax(classes_scores)
+                  #  Continue if the class score is above threshold.
+                  if (classes_scores[class_id] > SCORE_THRESHOLD):
+                        confidences.append(confidence)
+                        class_ids.append(class_id)
+                        cx, cy, w, h = row[0], row[1], row[2], row[3]
+                        left = int((cx - w/2) * x_factor)
+                        top = int((cy - h/2) * y_factor)
+                        width = int(w * x_factor)
+                        height = int(h * y_factor)
+                        box = np.array([left, top, width, height])
+                        boxes.append(box)
+      indices = cv2.dnn.NMSBoxes(boxes, confidences, CONFIDENCE_THRESHOLD, NMS_THRESHOLD)
+      for i in indices:
+            box = boxes[i]
+            left = box[0]
+            top = box[1]
+            width = box[2]
+            height = box[3]             
+            # Draw bounding box.             
+            cv2.rectangle(input_image, (left, top), (left + width, top + height), BLUE, 3*THICKNESS)
+            # Class label.                      
+            label = "{}:{:.2f}".format(classes[class_ids[i]], confidences[i])             
+            # Draw label.             
+            draw_label(input_image, label, left, top)
+      return input_image
 
-# Run inference on images.
-IMAGE_INFER_DIR = inference(RES_DIR, f"{base_dir}/inference_images")
-visualize(IMAGE_INFER_DIR)
+if __name__ == '__main__':
+      # Load class names.
+      classesFile = "Assignment3\coco2.names"
+      classes = None
+      with open(classesFile, 'rt') as f:
+            classes = f.read().rstrip('\n').split('\n')
+      # Load image.
+    #   frame = cv2.imread('Assignment3/traffic.jpg')
+      # Give the weight files to the model and load the network using       them.
+      model_path = "C:/Users/arnar/YOLOv5/models/custom_model.onnx" 
+      model = onnx.load(model_path)  # Load the original ONNX model
+      model_simp, check = simplify(model)
+      assert check, "Simplified ONNX model could not be validated"
+      # Save the simplified model (overwrites the original)
+      onnx.save(model_simp, model_path)
+      net = cv2.dnn.readNet(model_path)
+      # Process image.
+      while True:
+        _, frame = cap.read()
+        detections = pre_process(frame, net)
+        img = post_process(frame.copy(), detections)
+        """
+        Put efficiency information. The function getPerfProfile returns       the overall time for inference(t) 
+        and the timings for each of the layers(in layersTimes).
+        """
+        t, _ = net.getPerfProfile()
+        label = 'Inference time: %.2f ms' % (t * 1000.0 /  cv2.getTickFrequency())
+        print(label)
+        cv2.putText(img, label, (20, 40), FONT_FACE, FONT_SCALE,  (0, 0, 255), THICKNESS, cv2.LINE_AA)
+        cv2.imshow('Output', img)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
