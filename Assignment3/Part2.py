@@ -3,8 +3,6 @@ import numpy as np
 import onnx
 from onnxsim import simplify
 
-
-
 # Constants.
 INPUT_WIDTH = 640
 INPUT_HEIGHT = 640
