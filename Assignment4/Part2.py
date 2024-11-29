@@ -1,7 +1,16 @@
 import cv2
 import numpy as np
+import time
 
 cap = cv2.VideoCapture(1)
+
+def calculate_fps(prev_time):
+    """
+    Calculate frames per second
+    """
+    current_time = time.time()
+    fps = 1 / (current_time - prev_time)
+    return current_time, int(fps)
 
 def are_lines_similar(line1, line2, angle_threshold=5, distance_threshold=40):
     """
@@ -72,13 +81,23 @@ pts_dst = np.array([
     [0, height - 1]
 ], dtype=np.float32)
 
-# To prevent overlapping warped images
-last_warped = None
+# Initialize FPS variables
+prev_time = time.time()
+fps = 0
 
 while True:
     ret, frame = cap.read()
     if not ret:
         break
+
+    # Calculate FPS
+    prev_time, fps = calculate_fps(prev_time)
+
+    # Display FPS in the top-left corner
+    fps_text = f"FPS: {fps}"
+    cv2.putText(frame, fps_text, (10, 30), 
+                cv2.FONT_HERSHEY_SIMPLEX, 1, 
+                (0, 255, 0), 2)
 
     # Convert frame to grayscale and detect edges with more conservative parameters
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -93,14 +112,18 @@ while True:
         # Filter out similar lines
         unique_lines = []
         for line in lines:
+            # Stop if we've already found 4 unique lines
+            if len(unique_lines) == 4:
+                break
+            
             is_unique = True
             for unique_line in unique_lines:
                 if are_lines_similar(line[0], unique_line[0]):
                     is_unique = False
                     break
+        
             if is_unique:
                 unique_lines.append(line)
-
         # Draw lines and find intersections
         for i in range(len(unique_lines)):
             rho, theta = unique_lines[i][0]
@@ -127,7 +150,7 @@ while True:
             cv2.circle(frame, point, 5, (0, 255, 0), -1)  # Green dot
     
     # Check if we have at least 4 intersection points
-    if len(intersections) == 4:
+    if len(intersections) > 4:
         # Use the first 4 intersection points as source points
         pts_src = np.array(intersections[:4], dtype=np.float32)
         
