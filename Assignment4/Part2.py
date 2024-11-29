@@ -1,10 +1,28 @@
 import cv2
 import numpy as np
 
+cap = cv2.VideoCapture(1)
+
+def are_lines_similar(line1, line2, angle_threshold=5, distance_threshold=40):
+    """
+    More strict line similarity checking.
+    """
+    rho1, theta1 = line1
+    rho2, theta2 = line2
+    
+    # Compare angles more strictly
+    angle_diff = abs(theta1 - theta2)
+    angle_diff = min(angle_diff, np.pi - angle_diff)
+    
+    # Compare distances from origin more strictly
+    distance_diff = abs(rho1 - rho2)
+    
+    return (angle_diff < angle_threshold) and (distance_diff < distance_threshold)
+
 def find_intersection(line1, line2):
     """
     Finds the intersection of two lines in polar coordinates (rho, theta).
-    Returns None if the lines are parallel.
+    Returns None if the lines are parallel or too similar.
     """
     rho1, theta1 = line1
     rho2, theta2 = line2
@@ -15,14 +33,35 @@ def find_intersection(line1, line2):
     
     # Solve the linear equations
     determinant = a1 * b2 - a2 * b1
-    if determinant == 0:
-        return None  # Lines are parallel
+    
+    # Check for near-parallel lines or small determinant
+    if abs(determinant) < 1e-3:
+        return None
     
     x = (b2 * c1 - b1 * c2) / determinant
     y = (a1 * c2 - a2 * c1) / determinant
     return int(x), int(y)
 
-cap = cv2.VideoCapture(0)
+def order_points(pts):
+    """
+    Order points in top-left, top-right, bottom-right, bottom-left order
+    """
+    # Sort points based on x-coordinate
+    xSorted = pts[np.argsort(pts[:, 0]), :]
+    
+    # Get left-most and right-most points
+    leftMost = xSorted[:2, :]
+    rightMost = xSorted[2:, :]
+    
+    # Sort left-most points vertically
+    leftMost = leftMost[np.argsort(leftMost[:, 1]), :]
+    (tl, bl) = leftMost
+    
+    # Sort right-most points vertically
+    rightMost = rightMost[np.argsort(rightMost[:, 1]), :]
+    (tr, br) = rightMost
+    
+    return np.array([tl, tr, br, bl], dtype=np.float32)
 
 # Destination image dimensions
 height, width = 400, 300
@@ -33,23 +72,38 @@ pts_dst = np.array([
     [0, height - 1]
 ], dtype=np.float32)
 
+# To prevent overlapping warped images
+last_warped = None
+
 while True:
     ret, frame = cap.read()
     if not ret:
         break
 
-    # Convert frame to grayscale and detect edges
+    # Convert frame to grayscale and detect edges with more conservative parameters
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150)
+    # Adjusted Canny parameters for less noise
+    edges = cv2.Canny(gray, 100, 200)
 
     # Detect lines using Hough Transform
-    lines = cv2.HoughLines(edges, 1, np.pi / 180, 150)
+    lines = cv2.HoughLines(edges, 1, np.pi / 180, 100)  # Reduced threshold
     intersections = []
 
     if lines is not None:
+        # Filter out similar lines
+        unique_lines = []
+        for line in lines:
+            is_unique = True
+            for unique_line in unique_lines:
+                if are_lines_similar(line[0], unique_line[0]):
+                    is_unique = False
+                    break
+            if is_unique:
+                unique_lines.append(line)
+
         # Draw lines and find intersections
-        for i in range(len(lines)):
-            rho, theta = lines[i][0]
+        for i in range(len(unique_lines)):
+            rho, theta = unique_lines[i][0]
             a = np.cos(theta)
             b = np.sin(theta)
             x0 = a * rho
@@ -63,8 +117,8 @@ while True:
             cv2.line(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
 
             # Find intersections with other lines
-            for j in range(i + 1, len(lines)):
-                intersection = find_intersection(lines[i][0], lines[j][0])
+            for j in range(i + 1, len(unique_lines)):
+                intersection = find_intersection(unique_lines[i][0], unique_lines[j][0])
                 if intersection:
                     intersections.append(intersection)
         
@@ -73,16 +127,22 @@ while True:
             cv2.circle(frame, point, 5, (0, 255, 0), -1)  # Green dot
     
     # Check if we have at least 4 intersection points
-    if len(intersections) >= 4:
+    if len(intersections) == 4:
         # Use the first 4 intersection points as source points
         pts_src = np.array(intersections[:4], dtype=np.float32)
-
-        # Compute homography and warp the perspective
-        tform, _ = cv2.findHomography(pts_src, pts_dst)
-        warped = cv2.warpPerspective(frame, tform, (width, height))
         
-        # Display the warped image
-        cv2.imshow("Warped Image", warped)
+        try:
+            # Order points correctly
+            ordered_pts_src = order_points(pts_src)
+
+            # Compute homography and warp the perspective
+            tform, _ = cv2.findHomography(ordered_pts_src, pts_dst)
+            warped = cv2.warpPerspective(frame, tform, (width, height))
+            
+            # Display the warped image in a separate window to prevent overlap
+            cv2.imshow("Warped Image", warped)
+        except Exception as e:
+            print("Error in perspective transform:", e)
     
     # Display the original frame with lines and intersections
     cv2.imshow("Frame", frame)
