@@ -13,6 +13,7 @@ start_time = time.time()
 count = 0
 FPS_count = 0
 
+
 # Open both cameras
 cap0 = cv2.VideoCapture(0)  # Laptop camera
 cap1 = cv2.VideoCapture(1)  # Phone camera (change index as needed)
