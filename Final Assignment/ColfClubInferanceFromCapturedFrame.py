@@ -33,10 +33,9 @@ def main():
             break
 
         # Save the captured frame temporarily
-        cv2.imwrite("temp_frame.png", frame)
 
         # Perform inference on the captured frame
-        result = CLIENT.infer("temp_frame.png", model_id="golf_head_club_detect_v2/1")
+        result = CLIENT.infer(frame, model_id="golf_head_club_detect_v2/1")
 
         # Draw bounding boxes on the image
         for prediction in result["predictions"]:

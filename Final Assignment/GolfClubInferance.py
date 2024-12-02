@@ -1,18 +1,24 @@
-from inference_sdk import InferenceHTTPClient
+# from inference_sdk import InferenceHTTPClient
 import cv2
+from inference import get_model
 
 # Initialize the inference client
-CLIENT = InferenceHTTPClient(
-    api_url="https://detect.roboflow.com",
-    api_key="pagYRXfy4aKNH5AatqbQ"
-)
+# 
+
+model = get_model(model_id="golf_head_club_detect_v2/1")
+
+# CLIENT = InferenceHTTPClient(
+#     api_url="https://detect.roboflow.com",
+#     api_key="pagYRXfy4aKNH5AatqbQ"
+# )
 
 # Perform inference
 mynd = "tiger.png"
-result = CLIENT.infer(mynd, model_id="golf_head_club_detect_v2/1")
+# result = CLIENT.infer(mynd, model_id="golf_head_club_detect_v2/1")
 
 # Read the image
 image = cv2.imread(mynd)
+result = model.infer(mynd)
 
 # Class labels
 class_labels = {
