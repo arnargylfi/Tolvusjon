@@ -29,6 +29,7 @@ GREEN = (0, 255, 0)
 RED = (0, 0, 255)
 
 club_points = []
+ball_diameter = 42.67e-3 #m 
 
 # Initialize MediaPipe Pose
 mp_pose = mp.solutions.pose
@@ -60,6 +61,29 @@ def calculate_angle_between_vectors(v1, v2):
     # Calculate angle in radians and convert to degrees
     angle = math.acos(cos_angle)
     return math.degrees(angle)
+
+def calculate_club_speed(ball_box_width, pixel_speed, standard_ball_diameter=42.67e-3, fps=240):
+    """
+    Convert pixel speed to real-world speed in m/s
+    
+    Parameters:
+    - ball_box_width: Width of the ball's bounding box in pixels
+    - pixel_speed: Speed calculated in pixels per second
+    - standard_ball_diameter: Diameter of a standard golf ball in meters
+    - fps: Frames per second of the video
+    
+    Returns:
+    Real-world speed in meters per second
+    """
+    # Scale factor to convert pixels to meters
+    # Use the standard ball diameter to calculate the real-world to pixel ratio
+    pixels_per_meter = ball_box_width / standard_ball_diameter
+    
+    # Convert pixel speed to meters per second
+    real_world_speed = pixel_speed / pixels_per_meter
+    
+    return real_world_speed
+
 
 def draw_label(im, label, x, y):
     """Draw text onto image at location."""
@@ -100,6 +124,8 @@ def post_process(input_image, outputs):
                 height = int(h * y_factor)
                 box = np.array([left, top, width, height])
                 boxes.append(box)
+                if classes[class_ids[-1]] == "Ball":
+                    ball_box_width = width
 
     indices = cv2.dnn.NMSBoxes(boxes, confidences, CONFIDENCE_THRESHOLD, NMS_THRESHOLD)
     for i in indices:
@@ -123,6 +149,30 @@ def post_process(input_image, outputs):
     # Draw a continuous line connecting the club points
     if len(club_points) > 1:
         cv2.polylines(input_image, [np.array(club_points, np.int32)], isClosed=False, color=YELLOW, thickness=2)
+
+    # COMPUTE 5 frame average club speed
+    if len(club_points) > 5 and ball_box_width is not None: 
+        speeds = []
+        for i in range(1,5):
+            last_point = club_points[-i]
+            second_last_point = club_points[-i-1]
+            
+            # Calculate pixel distance
+            pixel_distance = math.sqrt(
+                (last_point[0] - second_last_point[0])**2 +
+                (last_point[1] - second_last_point[1])**2
+            )
+            
+            # Assuming 240 FPS, calculate speed in pixels per second
+            pixel_speed = pixel_distance * 240
+            real_world_speed = calculate_club_speed(ball_box_width,pixel_speed)
+            speeds.append(real_world_speed)
+        # Calculate average speed
+        avg_club_speed = sum(speeds) / len(speeds)
+        
+        # Display average club speed on the image
+        cv2.putText(input_image, f"Avg Club Speed: {avg_club_speed:.2f} m/s", 
+                    (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, GREEN, 2)
 
     return input_image
 
@@ -175,7 +225,10 @@ def draw_pose_landmarks(frame, result):
                       int(landmarks[mp_pose.PoseLandmark.LEFT_ELBOW].y * height)]
         left_wrist = [int(landmarks[mp_pose.PoseLandmark.LEFT_WRIST].x * width),
                       int(landmarks[mp_pose.PoseLandmark.LEFT_WRIST].y * height)]
-
+        right_foot = [int(landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE].x * width),
+                      int(landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE].y * height)]
+        left_foot = [int(landmarks[mp_pose.PoseLandmark.LEFT_ANKLE].x * width),
+                      int(landmarks[mp_pose.PoseLandmark.LEFT_ANKLE].y * height)]
         # Calculate midpoints for shoulders and hips
         mid_shoulder = [(right_shoulder[0] + left_shoulder[0]) // 2,
                         (right_shoulder[1] + left_shoulder[1]) // 2]
@@ -196,37 +249,39 @@ def draw_pose_landmarks(frame, result):
         right_thigh_vector = [right_knee[0] - right_hip[0], right_knee[1] - right_hip[1]]
         left_thigh_vector = [left_knee[0] - left_hip[0], left_knee[1] - left_hip[1]]
 
+
+
+        
         # Calculate vectors for the left arm
         left_arm_vector = [left_elbow[0] - left_shoulder[0], left_elbow[1] - left_shoulder[1]]
-
-        # Calculate vector for the left leg (thigh to knee)
-        left_leg_vector = [left_knee[0] - left_hip[0], left_knee[1] - left_hip[1]]
 
         # Calculate angles and determine colors
         thigh_angle = calculate_angle_between_vectors(right_thigh_vector, left_thigh_vector)
         thigh_color = GREEN if 25 <= thigh_angle <= 40 else RED
+        foot_color = GREEN if 25 <= thigh_angle <= 40 else RED
+
+
 
         body_to_right_thigh_angle = calculate_angle_between_vectors(body_vector, right_thigh_vector)
-        body_to_right_thigh_color = GREEN if 30 <= body_to_right_thigh_angle <= 50 else RED
+        # body_to_right_thigh_color = GREEN if 30 <= body_to_right_thigh_angle <= 50 else RED
 
         body_to_left_arm_angle = calculate_angle_between_vectors(body_vector, left_arm_vector)
         left_arm_color = GREEN if 45 <= body_to_left_arm_angle <= 75 else RED
 
-        left_thigh_to_leg_angle = calculate_angle_between_vectors(left_thigh_vector, left_leg_vector)
-        left_leg_color = GREEN if 120 <= left_thigh_to_leg_angle <= 160 else RED
-
         # Display angles on the frame
-        cv2.putText(frame, f"Thigh Angle: {int(thigh_angle)}", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, thigh_color, 2)
-        cv2.putText(frame, f"Body-R. Thigh: {int(body_to_right_thigh_angle)}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, body_to_right_thigh_color, 2)
-        cv2.putText(frame, f"Body-L. Arm: {int(body_to_left_arm_angle)}", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, left_arm_color, 2)
-        cv2.putText(frame, f"L. Thigh-Leg: {int(left_thigh_to_leg_angle)}", (50, 250), cv2.FONT_HERSHEY_SIMPLEX, 1, left_leg_color, 2)
+        cv2.putText(frame, f"Leg angle: {int(thigh_angle)}", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, thigh_color, 2)
+        # cv2.putText(frame, f"Body-R. Thigh: {int(body_to_right_thigh_angle)}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, body_to_right_thigh_color, 2)
+        # cv2.putText(frame, f"Body-L. Arm: {int(body_to_left_arm_angle)}", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, left_arm_color, 2)
+        # cv2.putText(frame, f"L. Thigh-Leg: {int(left_thigh_to_leg_angle)}", (50, 250), cv2.FONT_HERSHEY_SIMPLEX, 1, left_leg_color, 2)
 
         # Draw lines with dynamic colors
         cv2.line(frame, tuple(right_hip), tuple(right_knee), thigh_color, 2)
         cv2.line(frame, tuple(left_hip), tuple(left_knee), thigh_color, 2)
+        cv2.line(frame, tuple(right_knee), tuple(right_foot), thigh_color, 2)
+        cv2.line(frame, tuple(left_knee), tuple(left_foot), thigh_color, 2)
         cv2.line(frame, tuple(mid_shoulder), tuple(mid_hip), GREEN, 2)  # Body line stays green
         cv2.line(frame, tuple(left_shoulder), tuple(left_elbow), left_arm_color, 2)
-        cv2.line(frame, tuple(left_hip), tuple(left_knee), left_leg_color, 2)
+        # cv2.line(frame, tuple(left_hip), tuple(left_knee), left_leg_color, 2)
 
 
 # Paths
@@ -241,7 +296,7 @@ ort_session = ort.InferenceSession(model_path)
 input_name = ort_session.get_inputs()[0].name
 
 # Open video capture
-cap = cv2.VideoCapture("C:/Users/arnar/Downloads/ShutterSpeedDecreased.MOV")
+cap = cv2.VideoCapture("SlowSwing.MOV")
 #cap = cv2.VideoCapture(1)
 
 # Get video properties
