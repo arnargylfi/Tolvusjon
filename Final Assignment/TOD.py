@@ -133,8 +133,8 @@ while True:
             cv2.line(frame, key_points["golf_club_start"], key_points["golf_club_end"], (255, 0, 0), 2)
  
             wrist_center = key_points["left_hand"]
-            inner_radius = 75
-            outer_radius = 300
+            inner_radius = 75   # Inner radius of ROI
+            outer_radius = 300  # Outer radius of ROI
  
             mask = np.zeros((height, width), dtype=np.uint8)
             cv2.circle(mask, wrist_center, outer_radius, 255, -1)
